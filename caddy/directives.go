@@ -60,6 +60,7 @@ var directiveOrder = []directive{
 	{"mime", setup.Mime},
 	{"basicauth", setup.BasicAuth},
 	{"internal", setup.Internal},
+	{"wechat", setup.Wechat},
 	{"proxy", setup.Proxy},
 	{"fastcgi", setup.FastCGI},
 	{"websocket", setup.WebSocket},

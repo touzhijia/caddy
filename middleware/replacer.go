@@ -86,6 +86,9 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 		rep.replacements[headerReplacer+header+"}"] = strings.Join(val, ",")
 	}
 
+	for k, v := range registerMap {
+		rep.replacements["{="+k+"}"] = v
+	}
 	return rep
 }
 
@@ -117,3 +120,11 @@ const (
 	timeFormat     = "02/Jan/2006:15:04:05 -0700"
 	headerReplacer = "{>"
 )
+
+var (
+	registerMap = map[string]string{}
+)
+
+func RegisterReplacer(name, value string) {
+	registerMap[name] = value
+}
