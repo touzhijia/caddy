@@ -20,7 +20,9 @@ func Wechat(c *Controller) (middleware.Middleware, error) {
 }
 
 func wechatParse(c *Controller) (wechat.Config, error) {
-	config := wechat.Config{}
+	config := wechat.Config{
+		SignInPath: "/signin",
+	}
 	for c.Next() {
 		// No extra args expected
 		if len(c.RemainingArgs()) > 0 {
@@ -39,6 +41,16 @@ func wechatParse(c *Controller) (wechat.Config, error) {
 					return config, c.ArgErr()
 				}
 				config.Secret = c.Val()
+			case "auth_url":
+				if !c.NextArg() {
+					return config, c.ArgErr()
+				}
+				config.AuthURL = c.Val()
+			case "signin_path":
+				if !c.NextArg() {
+					return config, c.ArgErr()
+				}
+				config.SignInPath = c.Val()
 			}
 		}
 	}

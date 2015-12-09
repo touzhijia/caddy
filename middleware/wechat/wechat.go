@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 
 	"github.com/gorilla/sessions"
-
 	"github.com/mholt/caddy/middleware"
 )
 
@@ -17,12 +17,14 @@ type Wechat struct {
 	Next   middleware.Handler
 	Config Config
 
-	sessionStore sessions.Store
+	sessionStore *sessions.FilesystemStore
 }
 
 type Config struct {
-	AppId  string
-	Secret string
+	AppId      string
+	Secret     string
+	AuthURL    string
+	SignInPath string
 }
 
 type wechatError struct {
@@ -51,38 +53,42 @@ type wechatUserInfo struct {
 	wechatError
 }
 
+const (
+	kAccessTokenURL = "https://api.weixin.qq.com/sns/oauth2/access_token"
+	kUserInfoURL    = "https://api.weixin.qq.com/sns/userinfo"
+
+	kSessionDir    = ".sessions"
+	kSessionKey    = "WECHAT_AUTH_KEY"
+	kSessionSecret = "wEchAt_tZj"
+)
+
 func (c *Wechat) Init() {
-	c.sessionStore = sessions.NewFilesystemStore(".sessions", []byte("wechat"))
+	os.Mkdir(kSessionDir, 0666)
+	c.sessionStore = sessions.NewFilesystemStore(kSessionDir, []byte(kSessionSecret))
+	c.sessionStore.MaxAge(3600)
 	gob.Register(&wechatUserInfo{})
 }
 
 func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	// 已经登录
 	if user := c.getCurrentUser(r); user != nil {
-		middleware.RegisterReplacer("WechatID", user.UnionId)
+		fmt.Println(user)
+		middleware.RegisterReplacement("WechatID", user.UnionId)
 		return c.Next.ServeHTTP(w, r)
 	}
-	if r.URL.Path == "/signin" {
-		user, err := c.login(r)
+	if r.URL.Path == c.Config.SignInPath {
+		_, err := c.login(w, r)
 		if err != nil {
 			return http.StatusUnauthorized, err
 		}
-		session, err := c.sessionStore.Get(r, "AUTH_KEY_")
-		if err != nil {
-			fmt.Println(err)
-			panic(err)
-		}
-		session.Values["user"] = user
-		session.Save(r, w)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return http.StatusOK, nil
 	} else {
-		http.Redirect(w, r, "http://api.touzhijia.com/wxlogin?service=billing", http.StatusTemporaryRedirect)
-		return http.StatusOK, nil
+		http.Redirect(w, r, c.Config.AuthURL, http.StatusSeeOther)
 	}
-	return c.Next.ServeHTTP(w, r)
+	return 0, nil
 }
 
-func (c Wechat) login(r *http.Request) (user *wechatUserInfo, err error) {
+func (c *Wechat) login(w http.ResponseWriter, r *http.Request) (user *wechatUserInfo, err error) {
 	q := r.URL.Query()
 	code := q.Get("code")
 	var access *wechatAccess
@@ -92,14 +98,21 @@ func (c Wechat) login(r *http.Request) (user *wechatUserInfo, err error) {
 	if user, err = c.getUserInfo(access); err != nil {
 		return
 	}
+	session, err := c.sessionStore.Get(r, kSessionKey)
+	if err != nil {
+		return
+	}
+	session.Values["user"] = user
+	session.Save(r, w)
 	return
 }
 
 func (c Wechat) getCurrentUser(r *http.Request) *wechatUserInfo {
-	session, err := c.sessionStore.Get(r, "AUTH_KEY_")
+	session, err := c.sessionStore.Get(r, kSessionKey)
 	if err != nil {
 		return nil
 	}
+	fmt.Println(session.Values)
 	if user, ok := session.Values["user"].(*wechatUserInfo); ok {
 		return user
 	}
@@ -107,7 +120,7 @@ func (c Wechat) getCurrentUser(r *http.Request) *wechatUserInfo {
 }
 
 func (w Wechat) getAccess(code string) (a *wechatAccess, err error) {
-	u, _ := url.Parse("https://api.weixin.qq.com/sns/oauth2/access_token")
+	u, _ := url.Parse(kAccessTokenURL)
 	q := u.Query()
 	q.Set("appid", w.Config.AppId)
 	q.Set("secret", w.Config.Secret)
@@ -133,7 +146,7 @@ func (w Wechat) getAccess(code string) (a *wechatAccess, err error) {
 }
 
 func (w Wechat) getUserInfo(a *wechatAccess) (user *wechatUserInfo, err error) {
-	u, _ := url.Parse("https://api.weixin.qq.com/sns/userinfo")
+	u, _ := url.Parse(kUserInfoURL)
 	q := u.Query()
 	q.Set("access_token", a.Token)
 	q.Set("openid", a.OpenId)

@@ -86,8 +86,8 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 		rep.replacements[headerReplacer+header+"}"] = strings.Join(val, ",")
 	}
 
-	for k, v := range registerMap {
-		rep.replacements["{="+k+"}"] = v
+	for k, v := range customReplacements {
+		rep.replacements["{@"+k+"}"] = v
 	}
 	return rep
 }
@@ -122,9 +122,9 @@ const (
 )
 
 var (
-	registerMap = map[string]string{}
+	customReplacements = map[string]string{}
 )
 
-func RegisterReplacer(name, value string) {
-	registerMap[name] = value
+func RegisterReplacement(name, value string) {
+	customReplacements[name] = value
 }
