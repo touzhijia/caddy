@@ -4,10 +4,10 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/gorilla/sessions"
 	"github.com/mholt/caddy/middleware"
@@ -25,6 +25,7 @@ type Config struct {
 	Secret     string
 	AuthURL    string
 	SignInPath string
+	AuthPaths  string
 }
 
 type wechatError struct {
@@ -70,9 +71,11 @@ func (c *Wechat) Init() {
 }
 
 func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	if !c.shouldAuth(r) {
+		return c.Next.ServeHTTP(w, r)
+	}
 	// 已经登录
 	if user := c.getCurrentUser(r); user != nil {
-		fmt.Println(user)
 		middleware.RegisterReplacement("WechatID", user.UnionId)
 		return c.Next.ServeHTTP(w, r)
 	}
@@ -82,10 +85,19 @@ func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			return http.StatusUnauthorized, err
 		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
+	} else if strings.HasPrefix(r.URL.Path, "/api") {
+		return http.StatusUnauthorized, errors.New("user not login")
 	} else {
 		http.Redirect(w, r, c.Config.AuthURL, http.StatusSeeOther)
 	}
 	return 0, nil
+}
+
+func (c *Wechat) shouldAuth(r *http.Request) bool {
+	if strings.Contains(r.URL.Path, ".") {
+		return false
+	}
+	return true
 }
 
 func (c *Wechat) login(w http.ResponseWriter, r *http.Request) (user *wechatUserInfo, err error) {
@@ -112,7 +124,6 @@ func (c Wechat) getCurrentUser(r *http.Request) *wechatUserInfo {
 	if err != nil {
 		return nil
 	}
-	fmt.Println(session.Values)
 	if user, ok := session.Values["user"].(*wechatUserInfo); ok {
 		return user
 	}
