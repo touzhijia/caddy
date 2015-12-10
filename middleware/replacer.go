@@ -6,6 +6,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -86,9 +87,11 @@ func NewReplacer(r *http.Request, rr *responseRecorder, emptyValue string) Repla
 		rep.replacements[headerReplacer+header+"}"] = strings.Join(val, ",")
 	}
 
+	customReplacementsMutex.RLock()
 	for k, v := range customReplacements {
 		rep.replacements["{@"+k+"}"] = v
 	}
+	customReplacementsMutex.RUnlock()
 	return rep
 }
 
@@ -122,9 +125,12 @@ const (
 )
 
 var (
-	customReplacements = map[string]string{}
+	customReplacements      = map[string]string{}
+	customReplacementsMutex sync.RWMutex
 )
 
 func RegisterReplacement(name, value string) {
+	customReplacementsMutex.Lock()
+	defer customReplacementsMutex.Unlock()
 	customReplacements[name] = value
 }
