@@ -11,12 +11,11 @@ import (
 
 // TLS sets up the TLS configuration (but does not activate Let's Encrypt; that is handled elsewhere).
 func TLS(c *Controller) (middleware.Middleware, error) {
-	if c.Port == "http" {
+	if c.Scheme == "http" {
 		c.TLS.Enabled = false
-		log.Printf("[WARNING] TLS disabled for %s://%s. To force TLS over the plaintext HTTP port, "+
-			"specify port 80 explicitly (https://%s:80).", c.Port, c.Host, c.Host)
+		log.Printf("[WARNING] TLS disabled for %s://%s.", c.Scheme, c.Address())
 	} else {
-		c.TLS.Enabled = true // they had a tls directive, so assume it's on unless we confirm otherwise later
+		c.TLS.Enabled = true
 	}
 
 	for c.Next() {
@@ -32,18 +31,9 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 		case 2:
 			c.TLS.Certificate = args[0]
 			c.TLS.Key = args[1]
-
-			// manual HTTPS configuration without port specified should be
-			// served on the HTTPS port; that is what user would expect, and
-			// makes it consistent with how the letsencrypt package works.
-			if c.Port == "" {
-				c.Port = "https"
-			}
-		default:
-			return nil, c.ArgErr()
 		}
 
-		// Optional block
+		// Optional block with extra parameters
 		for c.NextBlock() {
 			switch c.Val() {
 			case "protocols":
@@ -74,6 +64,9 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 				if len(c.TLS.ClientCerts) == 0 {
 					return nil, c.ArgErr()
 				}
+			// TODO: Allow this? It's a bad idea to allow HTTP. If we do this, make sure invoking tls at all (even manually) also sets up a redirect if possible?
+			// case "allow_http":
+			// 	c.TLS.DisableHTTPRedir = true
 			default:
 				return nil, c.Errf("Unknown keyword '%s'", c.Val())
 			}
@@ -85,12 +78,13 @@ func TLS(c *Controller) (middleware.Middleware, error) {
 	return nil, nil
 }
 
-// SetDefaultTLSParams sets the default TLS cipher suites, protocol versions and server preferences
-// of a server.Config if they were not previously set.
+// SetDefaultTLSParams sets the default TLS cipher suites, protocol versions,
+// and server preferences of a server.Config if they were not previously set
+// (it does not overwrite; only fills in missing values).
 func SetDefaultTLSParams(c *server.Config) {
 	// If no ciphers provided, use all that Caddy supports for the protocol
 	if len(c.TLS.Ciphers) == 0 {
-		c.TLS.Ciphers = supportedCiphers
+		c.TLS.Ciphers = defaultCiphers
 	}
 
 	// Not a cipher suite, but still important for mitigating protocol downgrade attacks
@@ -106,6 +100,12 @@ func SetDefaultTLSParams(c *server.Config) {
 
 	// Prefer server cipher suites
 	c.TLS.PreferServerCipherSuites = true
+
+	// Default TLS port is 443; only use if port is not manually specified,
+	// TLS is enabled, and the host is not localhost
+	if c.Port == "" && c.TLS.Enabled && c.Host != "localhost" {
+		c.Port = "443"
+	}
 }
 
 // Map of supported protocols
@@ -158,4 +158,16 @@ var supportedCiphers = []uint16{
 	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 	tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
 	tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+}
+
+// List of all the ciphers we want to use by default
+var defaultCiphers = []uint16{
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 }
