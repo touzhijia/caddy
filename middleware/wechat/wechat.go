@@ -110,10 +110,7 @@ func (c *Wechat) login(w http.ResponseWriter, r *http.Request) (user *wechatUser
 	if user, err = c.getUserInfo(access); err != nil {
 		return
 	}
-	session, err := c.sessionStore.Get(r, kSessionKey)
-	if err != nil {
-		return
-	}
+	session, _ := c.sessionStore.Get(r, kSessionKey)
 	session.Values["user"] = user
 	session.Save(r, w)
 	return
@@ -138,7 +135,7 @@ func (w Wechat) getAccess(code string) (a *wechatAccess, err error) {
 	q.Set("code", code)
 	q.Set("grant_type", "authorization_code")
 	u.RawQuery = q.Encode()
-	res, err := http.Get(u.String())
+	res, err := httpGet(u.String())
 	if err != nil {
 		return
 	}
@@ -163,7 +160,7 @@ func (w Wechat) getUserInfo(a *wechatAccess) (user *wechatUserInfo, err error) {
 	q.Set("openid", a.OpenId)
 	q.Set("lang", "zh_CN")
 	u.RawQuery = q.Encode()
-	res, err := http.Get(u.String())
+	res, err := httpGet(u.String())
 	if err != nil {
 		return
 	}
@@ -179,4 +176,14 @@ func (w Wechat) getUserInfo(a *wechatAccess) (user *wechatUserInfo, err error) {
 		return
 	}
 	return
+}
+
+func httpGet(url string) (*http.Response, error) {
+	cli := http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Close = true
+	return cli.Do(req)
 }
