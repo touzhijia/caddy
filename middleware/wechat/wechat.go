@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -93,12 +94,22 @@ func (c *Wechat) Init() {
 	c.initTicket()
 }
 
+var (
+	rootURL = ""
+)
+
 func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	if r.URL.Path == "/" {
+		rootURL = r.URL.String()
+	}
 	if !c.shouldAuth(r) {
 		if r.URL.Path == "/jsapi_config.js" {
 			timestamp := time.Now().Unix()
-			nonce := "touzhijia.jz"
-			signature := c.getSignature(nonce, timestamp)
+			nonce := getNonceStr(8)
+			if len(rootURL) == 0 {
+				rootURL = c.Config.BaseURL
+			}
+			signature := c.getSignature(rootURL, nonce, timestamp)
 			debug := "false"
 			if c.Config.JSAPIDebug {
 				debug = "true"
@@ -144,6 +155,7 @@ func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 }
 
 func (c *Wechat) shouldAuth(r *http.Request) bool {
+	return false
 	if strings.Contains(r.URL.Path, ".") {
 		return false
 	}
@@ -303,11 +315,23 @@ func (c *Wechat) getJSToken() string {
 	return access.Token
 }
 
-func (c *Wechat) getSignature(nonce string, timestamp int64) string {
+func (c *Wechat) getSignature(url, nonce string, timestamp int64) string {
 	text := fmt.Sprintf("jsapi_ticket=%v&noncestr=%v&timestamp=%v&url=%v",
-		c.jsApiTicket.Value, nonce, timestamp, c.Config.BaseURL)
+		c.jsApiTicket.Value, nonce, timestamp, url)
 	sig := fmt.Sprintf("%x", sha1.Sum([]byte(text)))
 	return sig
+}
+
+var (
+	kLETTERS = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+)
+
+func getNonceStr(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = kLETTERS[rand.Intn(len(kLETTERS))]
+	}
+	return string(b)
 }
 
 func httpGet(url string) (*http.Response, error) {
