@@ -51,6 +51,11 @@ func wechatParse(c *Controller) (wechat.Config, error) {
 					return config, c.ArgErr()
 				}
 				config.SignInPath = c.Val()
+			case "base_url":
+				if !c.NextArg() {
+					return config, c.ArgErr()
+				}
+				config.BaseURL = c.Val()
 			}
 		}
 	}
