@@ -56,6 +56,9 @@ func wechatParse(c *Controller) (wechat.Config, error) {
 					return config, c.ArgErr()
 				}
 				config.BaseURL = c.Val()
+
+			case "jsapi_debug":
+				config.JSAPIDebug = true
 			}
 		}
 	}

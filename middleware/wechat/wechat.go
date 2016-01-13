@@ -30,6 +30,7 @@ type Config struct {
 	BaseURL    string
 	AuthURL    string
 	SignInPath string
+	JSAPIDebug bool
 }
 
 type ticketInfo struct {
@@ -98,9 +99,14 @@ func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			timestamp := time.Now().Unix()
 			nonce := "touzhijia.jz"
 			signature := c.getSignature(nonce, timestamp)
+			debug := "false"
+			if c.Config.JSAPIDebug {
+				debug = "true"
+			}
+
 			fmt.Fprintf(w, `
 			wx.config({
-				debug: false,
+				debug: %v,
 				appId: '%v',
 				timestamp: '%v',
 				nonceStr: '%v',
@@ -113,7 +119,7 @@ func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 					'uploadImage',
 					'downloadImage'
 				]});
-			`, c.Config.AppId, timestamp, nonce, signature)
+			`, debug, c.Config.AppId, timestamp, nonce, signature)
 			return 0, nil
 		}
 		return c.Next.ServeHTTP(w, r)
@@ -241,7 +247,7 @@ func (c *Wechat) initTicket() {
 			c.jsApiTicket.Token = token
 			c.jsApiTicket.Value = c.getJSTicket(token)
 			c.jsApiTicket.Timestamp = now
-			fmt.Println("generate ticket:", c.jsApiTicket)
+			fmt.Println("generate ticket:", c.jsApiTicket.Value)
 
 			ticketBytes, err := json.Marshal(c.jsApiTicket)
 			if err == nil {
@@ -300,7 +306,8 @@ func (c *Wechat) getJSToken() string {
 func (c *Wechat) getSignature(nonce string, timestamp int64) string {
 	text := fmt.Sprintf("jsapi_ticket=%v&noncestr=%v&timestamp=%v&url=%v",
 		c.jsApiTicket.Value, nonce, timestamp, c.Config.BaseURL)
-	return fmt.Sprintf("%x", sha1.Sum([]byte(text)))
+	sig := fmt.Sprintf("%x", sha1.Sum([]byte(text)))
+	return sig
 }
 
 func httpGet(url string) (*http.Response, error) {
