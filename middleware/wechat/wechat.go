@@ -151,6 +151,27 @@ func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 	}
 	// 已经登录
 	if user := c.getCurrentUser(r); user != nil {
+		if r.URL.Path == "/" {
+			timestamp := time.Now().Unix()
+			nonce := getNonceStr(8)
+			signature := c.getSignature(c.Config.BaseURL+r.URL.String(), nonce, timestamp)
+			t, err := template.New("index").Parse(indexTemplate)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+			err = t.Execute(w, map[string]interface{}{
+				"BaseURL":   c.Config.BaseURL,
+				"Debug":     c.Config.JSAPIDebug,
+				"AppId":     c.Config.AppId,
+				"Timestamp": timestamp,
+				"Nonce":     nonce,
+				"Signature": signature,
+			})
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+			return http.StatusOK, nil
+		}
 		middleware.RegisterReplacement("WechatID", user.UnionId)
 		return c.Next.ServeHTTP(w, r)
 	}
@@ -160,26 +181,6 @@ func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			return http.StatusUnauthorized, err
 		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
-	} else if r.URL.Path == "/" {
-		timestamp := time.Now().Unix()
-		nonce := getNonceStr(8)
-		signature := c.getSignature(c.Config.BaseURL+r.URL.String(), nonce, timestamp)
-		t, err := template.New("index").Parse(indexTemplate)
-		if err != nil {
-			return http.StatusInternalServerError, err
-		}
-		err = t.Execute(w, map[string]interface{}{
-			"BaseURL":   c.Config.BaseURL,
-			"Debug":     c.Config.JSAPIDebug,
-			"AppId":     c.Config.AppId,
-			"Timestamp": timestamp,
-			"Nonce":     nonce,
-			"Signature": signature,
-		})
-		if err != nil {
-			return http.StatusInternalServerError, err
-		}
-		return http.StatusOK, nil
 	} else if strings.HasPrefix(r.URL.Path, "/api") {
 		return http.StatusUnauthorized, errors.New("user not login")
 	} else {
@@ -189,7 +190,6 @@ func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 }
 
 func (c *Wechat) shouldAuth(r *http.Request) bool {
-	return false
 	if strings.Contains(r.URL.Path, ".") {
 		return false
 	}
