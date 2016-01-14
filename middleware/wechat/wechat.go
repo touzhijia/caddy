@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
@@ -94,45 +95,58 @@ func (c *Wechat) Init() {
 	c.initTicket()
 }
 
-var (
-	rootURL = ""
-)
+const indexTemplate = `
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8">
+    <title>网贷记账</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
+    <meta name="format-detection" content="telephone=no" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="/bundle.js"></script>
+    <script src="http://res.wx.qq.com/open/js/jweixin-1.0.0.js"></script>
+    <script>
+      wx.config({
+        debug: {{.Debug}},
+        appId: '{{.AppId}}',
+        timestamp: '{{.Timestamp}}',
+        nonceStr: '{{.Nonce}}',
+        signature: '{{.Signature}}',
+        jsApiList: [
+          'onMenuShareTimeline',
+          'onMenuShareAppMessage',
+          'previewImage',
+        ]
+      });
+      {{if .Debug}}
+      wx.error(function(res){
+        alert(res);
+      });
+      {{end}}
+      wx.ready(function(){
+        wx.onMenuShareTimeline({
+          title: '网贷记账--公测上线',
+          link: 'http://jz.m.touzhijia.com',
+          imgUrl: 'http://static.touzhijia.com/m/billing/share.png'
+        });
+        wx.onMenuShareAppMessage({
+          title: '网贷记账--公测上线',
+          desc: '轻松打理网贷资产、随时掌控投资和回款信息',
+          link: 'http://jz.m.touzhijia.com',
+          imgUrl: 'http://static.touzhijia.com/m/billing/share.png'
+        });
+      });
+    </script>
+
+  </body>
+</html>
+`
 
 func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
-	if r.URL.Path == "/" {
-		rootURL = r.URL.String()
-	}
 	if !c.shouldAuth(r) {
-		if r.URL.Path == "/jsapi_config.js" {
-			timestamp := time.Now().Unix()
-			nonce := getNonceStr(8)
-			if len(rootURL) == 0 {
-				rootURL = c.Config.BaseURL
-			}
-			signature := c.getSignature(rootURL, nonce, timestamp)
-			debug := "false"
-			if c.Config.JSAPIDebug {
-				debug = "true"
-			}
-
-			fmt.Fprintf(w, `
-			wx.config({
-				debug: %v,
-				appId: '%v',
-				timestamp: '%v',
-				nonceStr: '%v',
-				signature: '%v',
-				jsApiList: [
-					'onMenuShareTimeline',
-					'onMenuShareAppMessage',
-					'chooseImage',
-					'previewImage',
-					'uploadImage',
-					'downloadImage'
-				]});
-			`, debug, c.Config.AppId, timestamp, nonce, signature)
-			return 0, nil
-		}
 		return c.Next.ServeHTTP(w, r)
 	}
 	// 已经登录
@@ -146,6 +160,25 @@ func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			return http.StatusUnauthorized, err
 		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
+	} else if r.URL.Path == "/" {
+		timestamp := time.Now().Unix()
+		nonce := getNonceStr(8)
+		signature := c.getSignature(c.Config.BaseURL+r.URL.String(), nonce, timestamp)
+		t, err := template.New("index").Parse(indexTemplate)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		err = t.Execute(w, map[string]interface{}{
+			"Debug":     c.Config.JSAPIDebug,
+			"AppId":     c.Config.AppId,
+			"Timestamp": timestamp,
+			"Nonce":     nonce,
+			"Signature": signature,
+		})
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		return http.StatusOK, nil
 	} else if strings.HasPrefix(r.URL.Path, "/api") {
 		return http.StatusUnauthorized, errors.New("user not login")
 	} else {
