@@ -129,13 +129,13 @@ const indexTemplate = `
       wx.ready(function(){
         wx.onMenuShareTimeline({
           title: '网贷记账--公测上线',
-          link: 'http://jz.m.touzhijia.com',
+          link: '{{.BaseURL}}',
           imgUrl: 'http://static.touzhijia.com/m/billing/share.png'
         });
         wx.onMenuShareAppMessage({
           title: '网贷记账--公测上线',
           desc: '轻松打理网贷资产、随时掌控投资和回款信息',
-          link: 'http://jz.m.touzhijia.com',
+          link: '{{.BaseURL}}',
           imgUrl: 'http://static.touzhijia.com/m/billing/share.png'
         });
       });
@@ -169,6 +169,7 @@ func (c Wechat) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			return http.StatusInternalServerError, err
 		}
 		err = t.Execute(w, map[string]interface{}{
+			"BaseURL":   c.Config.BaseURL,
 			"Debug":     c.Config.JSAPIDebug,
 			"AppId":     c.Config.AppId,
 			"Timestamp": timestamp,
