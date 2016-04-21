@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -78,8 +77,7 @@ const (
 	kAccessTokenURL = "https://api.weixin.qq.com/sns/oauth2/access_token"
 	kUserInfoURL    = "https://api.weixin.qq.com/sns/userinfo"
 
-	kJSTokenURL  = "https://api.weixin.qq.com/cgi-bin/token"
-	kJSTicketURL = "https://api.weixin.qq.com/cgi-bin/ticket/getticket"
+	kJSTicketURL = "http://10.173.166.144:3006/api/meta"
 
 	kSessionDir    = ".sessions"
 	kSessionKey    = "WECHAT_AUTH_KEY"
@@ -91,8 +89,6 @@ func (c *Wechat) Init() {
 	c.sessionStore = sessions.NewFilesystemStore(kSessionDir, []byte(kSessionSecret))
 	c.sessionStore.MaxAge(3600)
 	gob.Register(&wechatUserInfo{})
-
-	c.initTicket()
 }
 
 const indexTemplate = `
@@ -274,84 +270,28 @@ func (w Wechat) getUserInfo(a *wechatAccess) (user *wechatUserInfo, err error) {
 	return
 }
 
-func (c *Wechat) initTicket() {
-	c.jsApiTicket = new(ticketInfo)
-	ticketBytes, err := ioutil.ReadFile(".ticket")
-	if err == nil {
-		json.Unmarshal(ticketBytes, c.jsApiTicket)
-	}
-
-	go func() {
-		for {
-			now := time.Now().Unix()
-			if now-c.jsApiTicket.Timestamp < 7000 {
-				time.Sleep(5 * time.Second)
-				continue
-			}
-			token := c.getJSToken()
-
-			c.jsApiTicket.Token = token
-			c.jsApiTicket.Value = c.getJSTicket(token)
-			c.jsApiTicket.Timestamp = now
-			fmt.Println("generate ticket:", c.jsApiTicket.Value)
-
-			ticketBytes, err := json.Marshal(c.jsApiTicket)
-			if err == nil {
-				ioutil.WriteFile(".ticket", ticketBytes, 0666)
-			}
-		}
-	}()
-}
-
-func (c *Wechat) getJSTicket(token string) string {
-	u, _ := url.Parse(kJSTicketURL)
-	q := u.Query()
-	q.Set("access_token", token)
-	q.Set("type", "jsapi")
-	u.RawQuery = q.Encode()
-	resp, err := httpGet(u.String())
+func getJsTicket() (ticket string) {
+	cli := &http.Client{}
+	resp, err := cli.Get(kJSTicketURL)
 	if err != nil {
-		panic(err)
+		return
 	}
-	defer resp.Body.Close()
-
 	d := json.NewDecoder(resp.Body)
-	ticket := &wechatTicket{}
-	err = d.Decode(ticket)
-	if err != nil {
-		panic(err)
+	m := map[string]string{}
+	if err := d.Decode(&m); err != nil {
+		return
 	}
-	if ticket.ErrCode != 0 {
-		panic(ticket.ErrMsg)
+	var ok bool
+	if ticket, ok = m["jsapi_ticket"]; !ok {
+		return ""
 	}
-	return ticket.Value
-}
-
-func (c *Wechat) getJSToken() string {
-	u, _ := url.Parse(kJSTokenURL)
-	q := u.Query()
-	q.Set("grant_type", "client_credential")
-	q.Set("appid", c.Config.AppId)
-	q.Set("secret", c.Config.Secret)
-	u.RawQuery = q.Encode()
-	resp, err := httpGet(u.String())
-	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
-
-	d := json.NewDecoder(resp.Body)
-	access := &wechatAccess{}
-	err = d.Decode(access)
-	if err != nil {
-		panic(err)
-	}
-	return access.Token
+	return
 }
 
 func (c *Wechat) getSignature(url, nonce string, timestamp int64) string {
+	ticket := getJsTicket()
 	text := fmt.Sprintf("jsapi_ticket=%v&noncestr=%v&timestamp=%v&url=%v",
-		c.jsApiTicket.Value, nonce, timestamp, url)
+		ticket, nonce, timestamp, url)
 	sig := fmt.Sprintf("%x", sha1.Sum([]byte(text)))
 	return sig
 }
